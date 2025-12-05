@@ -1,9 +1,7 @@
 import { CreateMLCEngine } from 'https://esm.run/@mlc-ai/web-llm';
 
 // --- CONFIGURATION ---
-// Switching back to Llama 3.2 3B. The 1B model is too small to reliably follow
-// the "Thinking" instructions and formatting rules. 3B is the sweet spot.
-const SELECTED_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
+// Models are now selected via UI in index.html
 
 // --- GLOBAL STATE ---
 let engine = null;
@@ -13,41 +11,18 @@ let currentSession = null;
 let currentSessionId = null;
 let isGenerating = false;
 let currentController = null; // WebLLM doesn't support AbortController the same way yet, but we can try interrupt
-let isCouncilMode = false;
 let isThinkingMode = false; // Default off
 let isResearchMode = false; // Disabled for mobile
 
-// Default Personas
-let personas = [
-  {
-    name: 'CHAD',
-    class: 'msg-chad',
-    prompt:
-      'Du bist CHAD. Direkt, mutig, handlungsorientiert. Keine Zeit für Unsinn. Mach es kurz und knackig.',
-    color: '#00ff00',
-  },
-  {
-    name: 'PARANOID',
-    class: 'msg-paranoid',
-    prompt:
-      'Du bist PARANOID. Du siehst überall Risiken und Gefahren. Sei extrem vorsichtig und skeptisch.',
-    color: '#ff9900',
-  },
-  {
-    name: 'POSITIV',
-    class: 'msg-positiv',
-    prompt:
-      'Du bist POSITIV. Du siehst immer das Gute und die Chancen. Sei optimistisch und ermutigend.',
-    color: '#00ffff',
-  },
-  {
-    name: 'FAKTEN',
-    class: 'msg-fakten',
-    prompt:
-      'Du bist FAKTEN-BASIERT. Nur beweisbare Daten zählen. Keine Emotionen, nur Logik und Wissenschaft.',
-    color: '#ff00ff',
-  },
-];
+// Stats
+let systemStats = {
+  requests: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  lastSpeed: 0,
+};
+
+// Default Personas - REMOVED
 
 // --- DOM ELEMENTS ---
 const messagesContainer = document.getElementById('messages');
@@ -62,6 +37,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Load Data
   await loadSessions();
+  loadStats();
 
   // Setup Model Loader
   const btnStart = document.getElementById('btn-start-engine');
@@ -72,23 +48,41 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 async function startEngine() {
   const btnStart = document.getElementById('btn-start-engine');
-  const loadingText = document.getElementById('model-loading-text');
+  const statusMain = document.getElementById('model-status-main');
+  const statusDetail = document.getElementById('model-status-detail');
   const loadingBar = document.getElementById('model-loading-bar');
+  const modelSelect = document.getElementById('model-select');
+  const selectedModel = modelSelect ? modelSelect.value : 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
   btnStart.style.display = 'none';
-  loadingText.textContent = 'Initializing WebGPU...';
+  if (modelSelect) modelSelect.disabled = true; // Lock selection
+  statusMain.textContent = 'Initializing WebGPU...';
 
   try {
-    engine = await CreateMLCEngine(SELECTED_MODEL, {
+    engine = await CreateMLCEngine(selectedModel, {
       initProgressCallback: (report) => {
         console.log(report);
-        loadingText.textContent = report.text;
-        // Parse progress if available (WebLLM report.progress is 0-1)
-        // Sometimes report.progress is undefined, rely on text
+
+        // Update Bar
         if (report.progress) {
           loadingBar.style.width = `${report.progress * 100}%`;
-        } else if (report.text.includes('Fetching')) {
-          loadingBar.style.width = '50%'; // Fake it
+        }
+
+        // Format Text nicely
+        if (report.text.includes('Fetching param cache')) {
+          const percent = report.progress ? Math.round(report.progress * 100) : 0;
+          statusMain.textContent = `Downloading Model... ${percent}%`;
+          statusDetail.textContent = report.text; // Technical details smaller
+        } else if (report.text.includes('Loading model from cache')) {
+          statusMain.textContent = 'Loading from Cache...';
+          statusDetail.textContent = 'Verifying files...';
+        } else if (report.text.includes('Finish loading')) {
+          statusMain.textContent = 'Ready!';
+          statusDetail.textContent = '';
+        } else {
+          // Fallback for other states
+          statusMain.textContent = report.text;
+          statusDetail.textContent = '';
         }
       },
     });
@@ -124,8 +118,6 @@ function setupEventListeners() {
   btnSubmit.addEventListener('click', handleInput);
 
   // Mode Toggles
-  // Council Mode Removed
-
   document.getElementById('btn-mode-thinking').addEventListener('click', (e) => {
     isThinkingMode = !isThinkingMode;
     e.target.classList.toggle('active', isThinkingMode);
@@ -249,7 +241,8 @@ async function askSingleModel(q) {
   }
 
   let fullText = '';
-  let systemPrompt = 'You are a helpful AI assistant.';
+  let systemPrompt =
+    'You are a helpful, intelligent AI assistant. You always provide clear, complete, and direct answers. You do not output truncated text or "read more" links.';
 
   if (isResearchMode) {
     systemPrompt =
@@ -268,7 +261,7 @@ async function askSingleModel(q) {
 
   if (isThinkingMode && !isResearchMode) {
     systemPrompt +=
-      ' IMPORTANT: You MUST start your response with a <think>...</think> block. Example: <think>My thought process...</think> Final Answer...';
+      ' IMPORTANT: You are a deep thinking AI. You MUST start your response with a <think>...</think> block where you reason about the user query step-by-step before providing the final answer. Example: <think>My thought process...</think> Final Answer...';
   }
 
   const messages = [
@@ -280,73 +273,15 @@ async function askSingleModel(q) {
     const completion = await engine.chat.completions.create({
       messages: messages,
       stream: true,
+      stream_options: { include_usage: true },
       temperature: 0.7,
       max_tokens: 4000, // Ensure enough tokens for research
     });
 
+    let finalUsage = null;
+
     for await (const chunk of completion) {
-      const delta = chunk.choices[0].delta.content;
-      if (delta) {
-        fullText += delta;
-        updateStreamingContent(contentDiv, fullText);
-        scrollToBottom();
-      }
-    }
-
-    // Save
-    currentSession.messages.push({ role: 'assistant', content: fullText });
-    saveSessions();
-  } catch (e) {
-    contentDiv.innerHTML += `<br><span style="color:red">[Error: ${e.message}]</span>`;
-  } finally {
-    clearInterval(timerInterval);
-    // Ensure final time is set
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    timerSpan.textContent = `${elapsed}s`;
-  }
-}
-
-async function askCouncil(q) {
-  // 1. Loop through personas
-  const answers = [];
-
-  for (const p of personas) {
-    // Create UI Card
-    const card = document.createElement('div');
-    card.className = `msg-card ${p.class}`;
-    card.innerHTML = `
-      <div class="msg-header">
-        <span>${p.name}</span>
-        <span>Thinking...</span>
-      </div>
-      <div class="msg-content"><i class="fas fa-circle-notch fa-spin"></i></div>
-    `;
-    messagesContainer.appendChild(card);
-    scrollToBottom();
-
-    const contentDiv = card.querySelector('.msg-content');
-    let fullText = '';
-
-    let systemPrompt = p.prompt;
-    if (isThinkingMode) {
-      systemPrompt +=
-        ' IMPORTANT: You MUST start your response with a <think>...</think> block where you reason about the user query step-by-step before providing the final answer.';
-    }
-
-    // Prepare messages (System + User Query) - Council usually doesn't see full history to save context
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: q },
-    ];
-
-    try {
-      const completion = await engine.chat.completions.create({
-        messages: messages,
-        stream: true,
-        temperature: 0.7,
-      });
-
-      for await (const chunk of completion) {
+      if (chunk.choices && chunk.choices.length > 0) {
         const delta = chunk.choices[0].delta.content;
         if (delta) {
           fullText += delta;
@@ -354,76 +289,26 @@ async function askCouncil(q) {
           scrollToBottom();
         }
       }
-
-      answers.push({ name: p.name, text: fullText });
-    } catch (e) {
-      contentDiv.innerHTML = `<span style="color:red">Error: ${e.message}</span>`;
-      answers.push({ name: p.name, text: 'Error' });
-    }
-  }
-
-  // 2. Consensus
-  await generateConsensus(q, answers);
-}
-
-async function generateConsensus(q, answers) {
-  const consensusDiv = document.createElement('div');
-  consensusDiv.className = 'msg-card msg-final';
-  consensusDiv.innerHTML = `
-    <div class="final-header"><i class="fas fa-check-circle"></i> SYSTEM CONSENSUS</div>
-    <div class="final-body"><i class="fas fa-circle-notch fa-spin"></i> Analyzing...</div>
-  `;
-  messagesContainer.appendChild(consensusDiv);
-  scrollToBottom();
-
-  const contentDiv = consensusDiv.querySelector('.final-body');
-
-  // Clean answers (remove think tags)
-  const cleanAnswers = answers.map((a) => {
-    return {
-      name: a.name,
-      text: a.text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim(),
-    };
-  });
-
-  const prompt = `
-    Du bist der neutrale Protokollführer des AI Councils.
-
-    FRAGE: "${q}"
-
-    ANTWORTEN:
-    ${cleanAnswers.map((a) => `### ${a.name}:\n${a.text}`).join('\n\n')}
-
-    AUFGABE:
-    Erstelle einen "Consensus Report". Fasse zusammen, finde Gemeinsamkeiten und formuliere ein Fazit.
-  `;
-
-  let fullText = '';
-
-  try {
-    const completion = await engine.chat.completions.create({
-      messages: [
-        { role: 'system', content: 'Du bist der Vorsitzende. Fasse zusammen.' },
-        { role: 'user', content: prompt },
-      ],
-      stream: true,
-      temperature: 0.7,
-    });
-
-    for await (const chunk of completion) {
-      const delta = chunk.choices[0].delta.content;
-      if (delta) {
-        fullText += delta;
-        updateStreamingContent(contentDiv, fullText);
-        scrollToBottom();
+      if (chunk.usage) {
+        finalUsage = chunk.usage;
       }
     }
 
-    // Save Consensus to history
-    currentSession.messages.push({ role: 'assistant', content: fullText, type: 'consensus' });
+    // Save
+    currentSession.messages.push({ role: 'assistant', content: fullText });
     saveSessions();
+
+    // Track Usage
+    if (finalUsage) {
+      trackUsage(finalUsage, Date.now() - startTime);
+    }
   } catch (e) {
-    contentDiv.innerHTML = 'Error generating consensus.';
+    contentDiv.innerHTML += `<br><span style="color:red">[Error: ${e.message}]</span>`;
+  } finally {
+    clearInterval(timerInterval);
+    // Ensure final time is set
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    timerSpan.textContent = `${elapsed}s`;
   }
 }
 
@@ -596,17 +481,7 @@ function switchSession(id) {
   messagesContainer.innerHTML = '<div class="system-message">Session Loaded.</div>';
 
   currentSession.messages.forEach((msg) => {
-    if (msg.type === 'consensus') {
-      const div = document.createElement('div');
-      div.className = 'msg-card msg-final';
-      div.innerHTML = `
-         <div class="final-header"><i class="fas fa-check-circle"></i> SYSTEM CONSENSUS</div>
-         <div class="final-body">${renderMarkdown(msg.content)}</div>
-       `;
-      messagesContainer.appendChild(div);
-    } else {
-      addMessageToUI(msg.content, msg.role);
-    }
+    addMessageToUI(msg.content, msg.role);
   });
 
   document.querySelector('.header-title').textContent = `Session: ${currentSession.title}`;
@@ -648,4 +523,61 @@ function deleteSession(id) {
       currentSession = null;
     }
   }
+}
+
+// --- STATS MANAGEMENT ---
+function loadStats() {
+  const stored = localStorage.getItem('colossus_mobile_stats');
+  if (stored) {
+    systemStats = JSON.parse(stored);
+  }
+  updateStatsUI();
+}
+
+function saveStats() {
+  localStorage.setItem('colossus_mobile_stats', JSON.stringify(systemStats));
+  updateStatsUI();
+}
+
+function updateStatsUI() {
+  const statRequests = document.getElementById('stat-requests');
+  const statPrompt = document.getElementById('stat-prompt');
+  const statCompletion = document.getElementById('stat-completion');
+  const statSpeed = document.getElementById('stat-speed');
+
+  const barRequests = document.getElementById('bar-requests');
+  const barPrompt = document.getElementById('bar-prompt');
+  const barCompletion = document.getElementById('bar-completion');
+  const barSpeed = document.getElementById('bar-speed');
+
+  if (statRequests) statRequests.textContent = systemStats.requests;
+  if (statPrompt) statPrompt.textContent = systemStats.promptTokens.toLocaleString();
+  if (statCompletion) statCompletion.textContent = systemStats.completionTokens.toLocaleString();
+  if (statSpeed) statSpeed.textContent = systemStats.lastSpeed.toFixed(1) + ' T/s';
+
+  // Visual bars (cycling 0-100%)
+  if (barRequests) barRequests.style.width = (systemStats.requests % 100) + '%';
+  if (barPrompt) barPrompt.style.width = ((systemStats.promptTokens / 100) % 100) + '%';
+  if (barCompletion) barCompletion.style.width = ((systemStats.completionTokens / 100) % 100) + '%';
+
+  if (barSpeed) {
+    let speedPercent = (systemStats.lastSpeed / 100) * 100;
+    if (speedPercent > 100) speedPercent = 100;
+    barSpeed.style.width = speedPercent + '%';
+  }
+}
+
+function trackUsage(usage, timeMs) {
+  if (!usage) return;
+
+  systemStats.requests++;
+  systemStats.promptTokens += usage.prompt_tokens || 0;
+  systemStats.completionTokens += usage.completion_tokens || 0;
+
+  if (usage.completion_tokens > 0 && timeMs > 0) {
+    const seconds = timeMs / 1000;
+    systemStats.lastSpeed = usage.completion_tokens / seconds;
+  }
+
+  saveStats();
 }

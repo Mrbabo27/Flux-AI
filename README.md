@@ -11,7 +11,8 @@ This is the **Mobile** branch of Flux-AI. It contains the standalone web applica
 
 The Mobile client is a standalone web application that brings powerful AI to your phone without needing a backend server.
 
-- **In-Browser AI:** Powered by **WebLLM**, it runs `Llama-3.2-3B` directly in your browser using WebGPU.
+- **In-Browser AI:** Powered by **WebLLM**, it runs `Phi-3.5 Vision` directly in your browser using WebGPU.
+- **Vision Capable:** Upload images directly for analysis (Multimodal).
 - **Thinking Mode:** Enables Chain-of-Thought reasoning for complex problem solving.
 - **Zero Setup:** No server required – just open the page and chat.
 

@@ -41,7 +41,28 @@
         "
       >
         <h1 style="text-align: center; font-size: 200%" class="logo">Odysseus Mobile</h1>
-        <p id="model-loading-text">Starting...</p>
+
+        <div
+          id="loading-status-container"
+          style="
+            text-align: center;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 20px 0;
+            width: 90%;
+          "
+        >
+          <div
+            id="model-status-main"
+            style="font-size: 1.2rem; font-weight: bold; margin-bottom: 8px"
+          >
+            Starting...
+          </div>
+          <div
+            id="model-status-detail"
+            style="font-size: 0.8rem; color: #888; line-height: 1.4; word-wrap: break-word"
+          ></div>
+        </div>
+
         <div
           style="
             width: 80%;
@@ -57,6 +78,31 @@
             style="width: 0%; height: 100%; background: #00ff00; transition: width 0.3s"
           ></div>
         </div>
+
+        <div style="margin-top: 20px; width: 80%">
+          <label for="model-select" style="display: block; margin-bottom: 5px; color: #aaa"
+            >Select Model:</label
+          >
+          <select
+            id="model-select"
+            style="
+              width: 100%;
+              padding: 10px;
+              background: #333;
+              color: white;
+              border: 1px solid #555;
+              border-radius: 5px;
+            "
+          >
+            <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC" selected>
+              Llama 3.2 3B (Text Only, Fast, ~2.3GB)
+            </option>
+            <option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">
+              Qwen 2.5 0.5B (Ultra Fast, ~1GB)
+            </option>
+          </select>
+        </div>
+
         <button
           id="btn-start-engine"
           style="
@@ -177,7 +223,7 @@
               <input
                 type="text"
                 id="question"
-                placeholder="Send a message to the council..."
+                placeholder="Send a message..."
                 autofocus
                 style="flex: 1"
               />
@@ -225,87 +271,7 @@
           <div class="stat-row"><span>Last Speed</span> <span id="stat-speed">0 T/s</span></div>
           <div class="bar"><div class="fill" id="bar-speed" style="width: 0%"></div></div>
         </div>
-
-        <div class="process-list">
-          <div class="section-title">Active Personalities</div>
-          <div id="active-models-list">
-            <!-- Will be filled by JS -->
-          </div>
-          <div
-            class="add-model-container"
-            style="
-              margin-top: 10px;
-              padding-top: 10px;
-              border-top: 1px solid #333;
-              text-align: center;
-            "
-          >
-            <button
-              id="btn-open-add-modal"
-              style="
-                width: 100%;
-                padding: 8px;
-                background: #333;
-                border: 1px solid #444;
-                color: #fff;
-                cursor: pointer;
-                border-radius: 4px;
-              "
-            >
-              <i class="fas fa-plus"></i> Add Member
-            </button>
-          </div>
-        </div>
       </aside>
-    </div>
-
-    <!-- ADD PERSONA MODAL -->
-    <div id="add-persona-modal" class="modal-overlay">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Add Council Member</h3>
-          <span class="close-modal" id="btn-close-modal">&times;</span>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>Name</label>
-            <input type="text" id="new-persona-name" placeholder="e.g. SKEPTIC" />
-          </div>
-          <div class="form-group">
-            <label>System Prompt (Character)</label>
-            <textarea
-              id="new-persona-prompt"
-              rows="4"
-              placeholder="Describe how this member should behave..."
-            ></textarea>
-          </div>
-          <div class="form-group">
-            <label>Model ID (Optional)</label>
-            <input
-              type="text"
-              id="new-persona-model-id"
-              placeholder="e.g. gpt-4, qwen-2.5-7b-instruct, or leave empty for default"
-            />
-          </div>
-          <div class="form-group">
-            <label>Color</label>
-            <div class="color-picker-wrapper">
-              <input type="color" id="new-persona-color" value="#00ff00" />
-              <input
-                type="text"
-                id="new-persona-color-text"
-                value="#00ff00"
-                maxlength="7"
-                placeholder="#000000"
-              />
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button id="btn-cancel-persona">Cancel</button>
-          <button id="btn-save-persona" class="primary">Save Member</button>
-        </div>
-      </div>
     </div>
 
     <!-- ADD MODEL DEFINITION MODAL -->
@@ -349,17 +315,8 @@
       </div>
     </div>
 
-    <!-- DELETE CONFIRMATION POPOVER -->
-    <div id="delete-confirm-modal" class="delete-popover">
-      <div class="delete-popover-content">
-        <p id="delete-confirm-text">Remove this member?</p>
-        <div class="delete-popover-actions">
-          <button id="btn-cancel-delete" class="btn-cancel">Cancel</button>
-          <button id="btn-confirm-delete" class="btn-confirm">Delete</button>
-        </div>
-      </div>
-    </div>
+    <!-- DELETE CONFIRMATION POPOVER - REMOVED -->
 
-    <script type="module" src="script.js"></script>
+    <script type="module" src="script.js?v=3"></script>
   </body>
 </html>
