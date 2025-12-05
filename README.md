@@ -1,4 +1,4 @@
-# AI-Council (Colossus & Odysseus)
+# Flux-AI (Colossus & Odysseus)
 
 A dual-platform AI chat interface designed to explore different AI personas and interaction modes. This repository contains two distinct applications: a **Desktop** client for local inference servers and a **Mobile** client that runs LLMs entirely in the browser.
 
